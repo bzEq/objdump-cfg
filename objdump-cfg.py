@@ -54,7 +54,7 @@ class ParseContext(object):
         if not self.current_function:
             m = FUNCTION_BEGIN_LINE.match(l)
             if m:
-                print(m.group(2))
+                logging.info('Found: {}'.format(m.group(2)))
                 self.current_function = Function(m.group(2))
                 self.current_function.address = int(m.group(1), 16)
                 self.functions[
