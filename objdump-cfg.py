@@ -74,8 +74,11 @@ def main():
     parser = argparse.ArgumentParser(
         description='Output CFG dot file via objdump.')
     parser.add_argument('--objdump', default=shutil.which('objdump'))
+    parser.add_argument('--verbose', default=False, action='store_true')
     parser.add_argument('obj', nargs=1)
     config = parser.parse_args()
+    if config.verbose:
+        logging.basicConfig(level=logging.INFO)
     cmd = [
         config.objdump,
         '-d',
