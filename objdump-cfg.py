@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
+# FIXME: A more reliable way to get this task done should be implementing the dumper in llvm-objdump.
 import os
 import sys
 import re
