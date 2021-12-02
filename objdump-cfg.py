@@ -10,6 +10,7 @@ import shutil
 import bisect
 import logging
 import io
+import shlex
 
 FUNCTION_BEGIN_LINE = re.compile(r'^([0-9a-f]+)\s+<(.+)>:$')
 INSTRUCTION_LINE = re.compile(r'^\s*([0-9a-f]+):\s*(.*)$')
@@ -38,6 +39,7 @@ class CFGPainter(object):
         self.BA = branch_analyzer
         self.BBs = []  # List of (i, len).
         self.branch_targets = set()
+        self.beginof = {}
 
     def Plan(self):
         logging.debug('Planning painting for {}'.format(self.F.name))
@@ -51,18 +53,44 @@ class CFGPainter(object):
         while j < len(self.F.instructions):
             if j in self.branch_targets:
                 if i != -1:
-                    self.BBs.append((i, j - i + 1))
+                    self.BBs.append((i, j - i))
+                    self.beginof[j - 1] = i
                 i = j
             if j in self.BA.branches:
                 assert (i != -1)
                 self.BBs.append((i, j - i + 1))
+                self.beginof[j] = i
                 i = -1
             j += 1
         if i != -1:
             self.BBs.append((i, j - i + 1))
+            self.beginof[j] = i
 
     def Dot(self, out_stream):
-        pass
+        out_stream.write('digraph {} '.format(self.F.name))
+        out_stream.write('{\n')
+        out_stream.write('node [shape="box"];\n')
+        for bb in self.BBs:
+            bb_name = "bb%d" % bb[0]
+            instructions = '\\n'.join([
+                "%x: %s" % (x[0], x[1])
+                for x in self.F.instructions[bb[0]:bb[0] + bb[1]]
+            ])
+            out_stream.write('%s [label="%s"];\n' % (bb_name, instructions))
+        edges = set()
+        for bb in self.BBs:
+            e = bb[0] + bb[1] - 1
+            bb_name = "bb%d" % bb[0]
+            if e in self.BA.branches:
+                for tgt in self.BA.branches[e]:
+                    tgt_name = "bb%d" % tgt
+                    edges.add("%s -> %s;\n" % (bb_name, tgt_name))
+            elif (e + 1) in self.branch_targets:
+                tgt_name = "bb%d" % (e + 1)
+                edges.add("%s -> %s;\n" % (bb_name, tgt_name))
+        for e in edges:
+            out_stream.write(e)
+        out_stream.write('}\n')
 
 
 def IsUncondBr(s):
@@ -220,6 +248,7 @@ def main():
         P.Plan()
         logging.debug("{}'s basic block layout: {}".format(
             function.name, P.BBs))
+        P.Dot(sys.stdout)
 
 
 if __name__ == '__main__':
