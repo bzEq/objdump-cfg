@@ -11,15 +11,17 @@ import bisect
 import logging
 import io
 
-# FIXME: Currently fallthrough is not considered as another basic block.
-FUNCTION_BEGIN_LINE = re.compile(r'^(\d+)\s+<(.+)>:$')
-INSTRUCTION_LINE = re.compile(r'^\s*(\d+):\s*(.*(<(.+)>)?)$')
+FUNCTION_BEGIN_LINE = re.compile(r'^([0-9a-f]+)\s+<(.+)>:$')
+INSTRUCTION_LINE = re.compile(r'^\s*([0-9a-f]+):\s*(.*(<(.+)>)?)$')
+INSTRUCTION = re.compile(r'([^<]+)(<([^\+]+)(\+([0-9a-fx]+))?>)?')
+
+UNCONDITIONAL_BRANCHES = [re.compile(x) for x in [r'\bb\b', r'\bjmp\b']]
 
 
 class Function(object):
     def __init__(self, name):
         self.name = name
-        self.address = 0
+        self.address = -1
         self.instructions = []
 
     def GetOrCreateBB(self, address):
@@ -32,12 +34,81 @@ class Function(object):
         self.instructions.append((address, instruction))
 
 
+def IsUncondBr(s):
+    for r in UNCONDITIONAL_BRANCHES:
+        if r.search(s):
+            return True
+
+
+def LowerBound(a, x, lo=0, hi=None, key=lambda x: x):
+    l = lo
+    r = hi if hi else len(a)
+    mid = l + (r - l) // 2
+    while l < r:
+        if key(a[mid]) >= x:
+            r = mid
+        else:
+            l = mid + 1
+        mid = l + (r - l) // 2
+    return r
+
+
+def UpperBound(a, x, lo=0, hi=None, key=lambda x: x):
+    l = lo
+    r = hi if hi else len(a)
+    mid = l + (r - l) // 2
+    while l < r:
+        if key(a[mid]) > x:
+            r = mid
+        else:
+            l = mid + 1
+        mid = l + (r - l) // 2
+    return r
+
+
 class BranchAnalyzer(object):
-    def __init__(self, function):
+    def __init__(self, context, function):
+        self.context = context
         self.function = function
+        self.branches = []
 
     def Analyze(self):
-        pass
+        logging.info('Analyzing {}'.format(self.function.name))
+        for i in range(len(self.function.instructions)):
+            t = self.function.instructions[i]
+            inst = t[1]
+            m = INSTRUCTION.match(inst)
+            assert (m)
+            mg = m.groups()
+            assert (len(mg) >= 1)
+            inst_main = mg[0]
+            if len(mg) == 5 and mg[4]:
+                label = mg[2]
+                # We have encountered a branch.
+                offset = int(mg[4], 16)
+                label_address = self.context.FindAddress(label)
+                if label_address < 0:
+                    continue
+                branch = (i, [])
+                targets = branch[1]
+                index_of_address = self.findIndexOfAddress(label_address +
+                                                           offset)
+                if index_of_address >= 0:
+                    targets.append(index_of_address)
+                if not IsUncondBr(inst_main) and (i + 1) < len(
+                        self.function.instructions):
+                    targets.append(i + 1)
+                if not targets:
+                    logging.info(
+                        '{} is branching to external function'.format(inst))
+                self.branches.append(branch)
+
+    def findIndexOfAddress(self, address):
+        i = LowerBound(self.function.instructions, address, key=lambda t: t[0])
+        if i == len(self.function.instructions
+                    ) or self.function.instructions[i][0] != address:
+            return -1
+        return i
 
 
 class ParseContext(object):
@@ -45,6 +116,11 @@ class ParseContext(object):
         self.current_function = ''
         self.functions = {}
         self.in_stream = in_stream
+
+    def FindAddress(self, label):
+        if label in self.functions:
+            return self.functions[label].address
+        return -1
 
     def Parse(self):
         for l in self.in_stream:
@@ -91,6 +167,10 @@ def main():
         return cp.returncode
     context = ParseContext(io.StringIO(cp.stdout.decode('utf-8')))
     context.Parse()
+    for label in context.functions:
+        function = context.functions[label]
+        BA = BranchAnalyzer(context, function)
+        BA.Analyze()
 
 
 if __name__ == '__main__':
