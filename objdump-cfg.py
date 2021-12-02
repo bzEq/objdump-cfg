@@ -16,6 +16,7 @@ INSTRUCTION_LINE = re.compile(r'^\s*([0-9a-f]+):\s*(.*(<(.+)>)?)$')
 INSTRUCTION = re.compile(r'([^<]+)(<([^\+]+)(\+([0-9a-fx]+))?>)?')
 
 UNCONDITIONAL_BRANCHES = [re.compile(x) for x in [r'\bb\b', r'\bjmp\b']]
+LONG_BRANCHES = [re.compile(x) for x in [r'\bblr\b', '\bretq\b']]
 
 
 class Function(object):
@@ -39,6 +40,13 @@ class CFGPainter(object):
 
 def IsUncondBr(s):
     for r in UNCONDITIONAL_BRANCHES:
+        if r.search(s):
+            return True
+    return False
+
+
+def IsLongBranch(s):
+    for r in LONG_BRANCHES:
         if r.search(s):
             return True
     return False
@@ -86,14 +94,16 @@ class BranchAnalyzer(object):
             mg = m.groups()
             assert (len(mg) >= 1)
             inst_main = mg[0]
-            if len(mg) == 5 and mg[4]:
+            branch = (i, [])
+            if IsLongBranch(inst_main):
+                self.branches.append(branch)
+            elif len(mg) >= 5 and mg[4]:
                 label = mg[2]
                 # We have encountered a branch.
                 offset = int(mg[4], 16)
                 label_address = self.context.FindAddress(label)
                 if label_address < 0:
                     continue
-                branch = (i, [])
                 targets = branch[1]
                 index_of_address = self.findIndexOfAddress(label_address +
                                                            offset)
