@@ -37,19 +37,19 @@ class CFGPainter(object):
         self.F = function
         self.BA = branch_analyzer
         self.BBs = []  # List of (i, len).
+        self.branch_targets = set()
 
     def Plan(self):
-        logging.info('Planning painting for {}'.format(self.F.name))
+        logging.debug('Planning painting for {}'.format(self.F.name))
         if self.F.IsEmpty():
             return
-        branch_targets = set()
-        branch_targets.add(0)
+        self.branch_targets.add(0)
         for branch in self.BA.branches:
-            branch_targets.update(set(self.BA.branches[branch]))
+            self.branch_targets.update(set(self.BA.branches[branch]))
         i = -1
         j = 0
         while j < len(self.F.instructions):
-            if j in branch_targets:
+            if j in self.branch_targets:
                 if i != -1:
                     self.BBs.append((i, j - i + 1))
                 i = j
@@ -112,7 +112,7 @@ class BranchAnalyzer(object):
         self.branches = {}
 
     def Analyze(self):
-        logging.info('Analyzing {}'.format(self.function.name))
+        logging.debug('Analyzing {}'.format(self.function.name))
         for i in range(len(self.function.instructions)):
             t = self.function.instructions[i]
             inst = t[1]
@@ -139,7 +139,7 @@ class BranchAnalyzer(object):
                         self.function.instructions):
                     targets.append(i + 1)
                 if not targets:
-                    logging.info(
+                    logging.debug(
                         '{} is branching to external function'.format(inst))
                 self.branches[i] = targets
 
@@ -170,7 +170,7 @@ class ParseContext(object):
         if not self.current_function:
             m = FUNCTION_BEGIN_LINE.match(l)
             if m:
-                logging.info('Found: {}'.format(m.group(2)))
+                logging.debug('Found: {}'.format(m.group(2)))
                 self.current_function = Function(m.group(2))
                 self.current_function.address = int(m.group(1), 16)
                 self.functions[
@@ -190,11 +190,11 @@ def main():
     parser = argparse.ArgumentParser(
         description='Output CFG dot file via objdump.')
     parser.add_argument('--objdump', default=shutil.which('objdump'))
-    parser.add_argument('--verbose', default=False, action='store_true')
+    parser.add_argument('--debug', default=False, action='store_true')
     parser.add_argument('obj', nargs=1)
     config = parser.parse_args()
-    if config.verbose:
-        logging.basicConfig(level=logging.INFO)
+    if config.debug:
+        logging.basicConfig(level=logging.DEBUG)
     cmd = [
         config.objdump,
         '-d',
