@@ -24,20 +24,24 @@ class Function(object):
         self.address = -1
         self.instructions = []
 
-    def GetOrCreateBB(self, address):
-        pass
-
-    def OutputDot(self, out_stream):
-        pass
-
     def Append(self, address, instruction):
         self.instructions.append((address, instruction))
+
+
+class CFGPainter(object):
+    def __init__(self, function, branch_analyzer):
+        self.F = function
+        self.BA = branch_analyzer
+
+    def Dot(self, out_stream):
+        pass
 
 
 def IsUncondBr(s):
     for r in UNCONDITIONAL_BRANCHES:
         if r.search(s):
             return True
+    return False
 
 
 def LowerBound(a, x, lo=0, hi=None, key=lambda x: x):
