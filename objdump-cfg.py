@@ -191,6 +191,7 @@ def main():
         description='Output CFG dot file via objdump.')
     parser.add_argument('--objdump', default=shutil.which('objdump'))
     parser.add_argument('--debug', default=False, action='store_true')
+    parser.add_argument('--func', default='')
     parser.add_argument('obj', nargs=1)
     config = parser.parse_args()
     if config.debug:
@@ -207,7 +208,10 @@ def main():
         return cp.returncode
     context = ParseContext(io.StringIO(cp.stdout.decode('utf-8')))
     context.Parse()
+    func = set(config.func.split(','))
     for label in context.functions:
+        if func and label not in func:
+            continue
         function = context.functions[label]
         BA = BranchAnalyzer(context, function)
         BA.Analyze()
