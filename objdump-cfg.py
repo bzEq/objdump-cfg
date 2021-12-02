@@ -12,8 +12,8 @@ import logging
 import io
 
 FUNCTION_BEGIN_LINE = re.compile(r'^([0-9a-f]+)\s+<(.+)>:$')
-INSTRUCTION_LINE = re.compile(r'^\s*([0-9a-f]+):\s*(.*(<(.+)>)?)$')
-INSTRUCTION = re.compile(r'([^<]+)(<([^\+]+)(\+([0-9a-fx]+))?>)?')
+INSTRUCTION_LINE = re.compile(r'^\s*([0-9a-f]+):\s*(.*)$')
+INSTRUCTION = re.compile(r'([^<#]+)(<([^\+]+)(\+([0-9a-fx]+))?>)?')
 
 UNCONDITIONAL_BRANCHES = [re.compile(x) for x in [r'\bb\b', r'\bjmp\b']]
 LONG_BRANCHES = [re.compile(x) for x in [r'\bblr\b', '\bretq\b']]
@@ -28,11 +28,38 @@ class Function(object):
     def Append(self, address, instruction):
         self.instructions.append((address, instruction))
 
+    def IsEmpty(self):
+        return len(self.instructions) == 0
+
 
 class CFGPainter(object):
     def __init__(self, function, branch_analyzer):
         self.F = function
         self.BA = branch_analyzer
+        self.BBs = []  # List of (i, len).
+
+    def Plan(self):
+        logging.info('Planning painting for {}'.format(self.F.name))
+        if self.F.IsEmpty():
+            return
+        branch_targets = set()
+        branch_targets.add(0)
+        for branch in self.BA.branches:
+            branch_targets.update(set(self.BA.branches[branch]))
+        i = -1
+        j = 0
+        while j < len(self.F.instructions):
+            if j in branch_targets:
+                if i != -1:
+                    self.BBs.append((i, j - i + 1))
+                i = j
+            if j in self.BA.branches:
+                assert (i != -1)
+                self.BBs.append((i, j - i + 1))
+                i = -1
+            j += 1
+        if i != -1:
+            self.BBs.append((i, j - i + 1))
 
     def Dot(self, out_stream):
         pass
@@ -82,7 +109,7 @@ class BranchAnalyzer(object):
     def __init__(self, context, function):
         self.context = context
         self.function = function
-        self.branches = []
+        self.branches = {}
 
     def Analyze(self):
         logging.info('Analyzing {}'.format(self.function.name))
@@ -94,9 +121,8 @@ class BranchAnalyzer(object):
             mg = m.groups()
             assert (len(mg) >= 1)
             inst_main = mg[0]
-            branch = (i, [])
             if IsLongBranch(inst_main):
-                self.branches.append(branch)
+                self.branches[i] = []
             elif len(mg) >= 5 and mg[4]:
                 label = mg[2]
                 # We have encountered a branch.
@@ -104,7 +130,7 @@ class BranchAnalyzer(object):
                 label_address = self.context.FindAddress(label)
                 if label_address < 0:
                     continue
-                targets = branch[1]
+                targets = []
                 index_of_address = self.findIndexOfAddress(label_address +
                                                            offset)
                 if index_of_address >= 0:
@@ -115,7 +141,7 @@ class BranchAnalyzer(object):
                 if not targets:
                     logging.info(
                         '{} is branching to external function'.format(inst))
-                self.branches.append(branch)
+                self.branches[i] = targets
 
     def findIndexOfAddress(self, address):
         i = LowerBound(self.function.instructions, address, key=lambda t: t[0])
@@ -185,6 +211,8 @@ def main():
         function = context.functions[label]
         BA = BranchAnalyzer(context, function)
         BA.Analyze()
+        P = CFGPainter(function, BA)
+        P.Plan()
 
 
 if __name__ == '__main__':
