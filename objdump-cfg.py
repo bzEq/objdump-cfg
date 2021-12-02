@@ -211,8 +211,11 @@ def main():
         function = context.functions[label]
         BA = BranchAnalyzer(context, function)
         BA.Analyze()
+        logging.debug("{}'s branches: {}".format(function.name, BA.branches))
         P = CFGPainter(function, BA)
         P.Plan()
+        logging.debug("{}'s basic block layout: {}".format(
+            function.name, P.BBs))
 
 
 if __name__ == '__main__':
