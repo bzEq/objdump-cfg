@@ -39,7 +39,6 @@ class CFGPainter(object):
         self.BA = branch_analyzer
         self.BBs = []  # List of (i, len).
         self.branch_targets = set()
-        self.beginof = {}
 
     def Plan(self):
         logging.debug('Planning painting for {}'.format(self.F.name))
@@ -54,17 +53,14 @@ class CFGPainter(object):
             if j in self.branch_targets:
                 if i != -1:
                     self.BBs.append((i, j - i))
-                    self.beginof[j - 1] = i
                 i = j
             if j in self.BA.branches:
-                assert (i != -1)
-                self.BBs.append((i, j - i + 1))
-                self.beginof[j] = i
+                if i != -1:
+                    self.BBs.append((i, j - i + 1))
                 i = -1
             j += 1
         if i != -1:
             self.BBs.append((i, j - i + 1))
-            self.beginof[j] = i
 
     def Dot(self, out_stream):
         out_stream.write('digraph {} '.format(self.F.name))
@@ -89,7 +85,7 @@ class CFGPainter(object):
                 tgt_name = "bb%d" % (e + 1)
                 edges.add("%s -> %s;\n" % (bb_name, tgt_name))
         for e in edges:
-            out.stream.write('  ')
+            out_stream.write('  ')
             out_stream.write(e)
         out_stream.write('}\n')
 
