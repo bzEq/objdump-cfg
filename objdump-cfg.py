@@ -69,14 +69,14 @@ class CFGPainter(object):
     def Dot(self, out_stream):
         out_stream.write('digraph {} '.format(self.F.name))
         out_stream.write('{\n')
-        out_stream.write('node [shape="box"];\n')
+        out_stream.write('  node [shape="box"];\n')
         for bb in self.BBs:
             bb_name = "bb%d" % bb[0]
             instructions = '\\n'.join([
                 "%x: %s" % (x[0], x[1])
                 for x in self.F.instructions[bb[0]:bb[0] + bb[1]]
             ])
-            out_stream.write('%s [label="%s"];\n' % (bb_name, instructions))
+            out_stream.write('  %s [label="%s"];\n' % (bb_name, instructions))
         edges = set()
         for bb in self.BBs:
             e = bb[0] + bb[1] - 1
@@ -89,6 +89,7 @@ class CFGPainter(object):
                 tgt_name = "bb%d" % (e + 1)
                 edges.add("%s -> %s;\n" % (bb_name, tgt_name))
         for e in edges:
+            out.stream.write('  ')
             out_stream.write(e)
         out_stream.write('}\n')
 
@@ -219,7 +220,8 @@ def main():
         description='Output CFG dot file via objdump.')
     parser.add_argument('--objdump', default=shutil.which('objdump'))
     parser.add_argument('--debug', default=False, action='store_true')
-    parser.add_argument('--func', default='')
+    parser.add_argument('--func', required=True)
+    parser.add_argument('-o', dest='out')
     parser.add_argument('obj', nargs=1)
     config = parser.parse_args()
     if config.debug:
@@ -236,19 +238,21 @@ def main():
         return cp.returncode
     context = ParseContext(io.StringIO(cp.stdout.decode('utf-8')))
     context.Parse()
-    func = set(config.func.split(','))
-    for label in context.functions:
-        if func and label not in func:
-            continue
-        function = context.functions[label]
-        BA = BranchAnalyzer(context, function)
-        BA.Analyze()
-        logging.debug("{}'s branches: {}".format(function.name, BA.branches))
-        P = CFGPainter(function, BA)
-        P.Plan()
-        logging.debug("{}'s basic block layout: {}".format(
-            function.name, P.BBs))
+    if config.func not in context.functions:
+        logging.error("Can't find {} in the object file".format(config.func))
+        return 1
+    function = context.functions[config.func]
+    BA = BranchAnalyzer(context, function)
+    BA.Analyze()
+    logging.debug("{}'s branches: {}".format(function.name, BA.branches))
+    P = CFGPainter(function, BA)
+    P.Plan()
+    logging.debug("{}'s basic block layout: {}".format(function.name, P.BBs))
+    if not config.out:
         P.Dot(sys.stdout)
+    else:
+        with open(config.out, 'w') as out:
+            P.Dot(out)
 
 
 if __name__ == '__main__':
