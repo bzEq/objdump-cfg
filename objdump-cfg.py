@@ -65,13 +65,13 @@ class CFGPainter(object):
     def Dot(self, out_stream):
         out_stream.write('digraph {} '.format(self.F.name))
         out_stream.write('{\n')
-        out_stream.write('  node [shape="box"];\n')
+        out_stream.write('  node [shape="box", fontname="monospace"];\n')
         for bb in self.BBs:
             bb_name = "bb%d" % bb[0]
-            instructions = '\\n'.join([
+            instructions = '\\l'.join([
                 "%x: %s" % (x[0], x[1])
                 for x in self.F.instructions[bb[0]:bb[0] + bb[1]]
-            ])
+            ]) + '\\l'
             out_stream.write('  %s [label="%s"];\n' % (bb_name, instructions))
         edges = set()
         for bb in self.BBs:
