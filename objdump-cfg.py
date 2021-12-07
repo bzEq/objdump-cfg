@@ -17,7 +17,7 @@ INSTRUCTION_LINE = re.compile(r'^\s*([0-9a-f]+):\s*(.*)$')
 INSTRUCTION = re.compile(r'([^<#]+)(<([^\+]+)(\+([0-9a-fx]+))?>)?')
 
 UNCONDITIONAL_BRANCHES = [re.compile(x) for x in [r'\bb\b', r'\bjmp\b']]
-LONG_BRANCHES = [re.compile(x) for x in [r'\bblr\b', r'\bretq\b']]
+LONG_BRANCHES = [re.compile(x) for x in [r'\bblr\b', r'\bretq\b', r'\bret\b']]
 
 
 class Function(object):
