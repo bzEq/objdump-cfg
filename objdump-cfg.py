@@ -114,7 +114,7 @@ class CFGAnalyzer(object):
                 i = -1
 
 
-class GraphVizPainter(object):
+class GraphvizPainter(object):
     def __init__(self, function, cfg_analyzer):
         self.function = function
         self.cfg_analyzer = cfg_analyzer
@@ -252,7 +252,7 @@ def main():
     logging.debug("{}'s branches: {}".format(function.name, BA.branches))
     CA = CFGAnalyzer(function, BA)
     CA.Analyze()
-    GVP = GraphVizPainter(function, CA)
+    GVP = GraphvizPainter(function, CA)
     logging.debug("{}'s basic block layout: {}".format(function.name,
                                                        CA.block_intervals))
     if not config.out:
