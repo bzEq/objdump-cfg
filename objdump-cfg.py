@@ -20,76 +20,6 @@ UNCONDITIONAL_BRANCHES = [re.compile(x) for x in [r'\bb\b', r'\bjmp\b']]
 LONG_BRANCHES = [re.compile(x) for x in [r'\bblr\b', r'\bretq\b', r'\bret\b']]
 
 
-class Function(object):
-    def __init__(self, name):
-        self.name = name
-        self.address = -1
-        self.instructions = []
-
-    def Append(self, address, instruction):
-        self.instructions.append((address, instruction))
-
-    def IsEmpty(self):
-        return len(self.instructions) == 0
-
-
-class CFGPainter(object):
-    def __init__(self, function, branch_analyzer):
-        self.F = function
-        self.BA = branch_analyzer
-        self.BBs = []  # List of (i, len).
-        self.branch_targets = set()
-
-    def Plan(self):
-        logging.debug('Planning painting for {}'.format(self.F.name))
-        if self.F.IsEmpty():
-            return
-        self.branch_targets.add(0)
-        for branch in self.BA.branches:
-            self.branch_targets.update(set(self.BA.branches[branch]))
-        i = -1
-        j = 0
-        while j < len(self.F.instructions):
-            if j in self.branch_targets:
-                if i != -1:
-                    self.BBs.append((i, j - i))
-                i = j
-            if j in self.BA.branches:
-                if i != -1:
-                    self.BBs.append((i, j - i + 1))
-                i = -1
-            j += 1
-        if i != -1:
-            self.BBs.append((i, j - i + 1))
-
-    def Dot(self, out_stream):
-        out_stream.write('digraph {} '.format(self.F.name))
-        out_stream.write('{\n')
-        out_stream.write('  node [shape="box", fontname="monospace"];\n')
-        for bb in self.BBs:
-            bb_name = "bb%d" % bb[0]
-            instructions = '\\l'.join([
-                "%x: %s" % (x[0], x[1])
-                for x in self.F.instructions[bb[0]:bb[0] + bb[1]]
-            ]) + '\\l'
-            out_stream.write('  %s [label="%s"];\n' % (bb_name, instructions))
-        edges = set()
-        for bb in self.BBs:
-            e = bb[0] + bb[1] - 1
-            bb_name = "bb%d" % bb[0]
-            if e in self.BA.branches:
-                for tgt in self.BA.branches[e]:
-                    tgt_name = "bb%d" % tgt
-                    edges.add("%s -> %s;\n" % (bb_name, tgt_name))
-            elif (e + 1) in self.branch_targets:
-                tgt_name = "bb%d" % (e + 1)
-                edges.add("%s -> %s;\n" % (bb_name, tgt_name))
-        for e in edges:
-            out_stream.write('  ')
-            out_stream.write(e)
-        out_stream.write('}\n')
-
-
 def IsUncondBr(s):
     for r in UNCONDITIONAL_BRANCHES:
         if r.search(s):
@@ -130,6 +60,84 @@ def UpperBound(a, x, lo=0, hi=None, key=lambda x: x):
     return r
 
 
+class Function(object):
+    def __init__(self, name):
+        self.name = name
+        self.address = -1
+        self.instructions = []
+
+    def Append(self, address, instruction):
+        self.instructions.append((address, instruction))
+
+    def IsEmpty(self):
+        return len(self.instructions) == 0
+
+
+class CFGAnalyzer(object):
+    def __init__(self, function, branch_analyzer):
+        self.function = function
+        self.branch_analyzer = branch_analyzer
+        self.branch_targets = set()
+        # List of (start_index_of_block, block_length).
+        self.block_intervals = []
+        self.preds = {}
+        self.succs = {}
+
+    def Analyze(self):
+        if len(self.function.instructions) == 0:
+            return
+        # 1. Every branch target should start a new block.
+        # 2. A block ends by either a branch or encounter a branch target.
+        for b in self.branch_analyzer.branches:
+            self.branch_targets.update(self.branch_analyzer.branches[b])
+        # Add entry block to branch target for convenience.
+        self.branch_targets.add(0)
+        for t in self.branch_targets:
+            self.preds[t] = set()
+            self.succs[t] = set()
+        i = -1
+        for j in range(len(self.function.instructions)):
+            if j in self.branch_targets:
+                if i >= 0:
+                    self.block_intervals.append((i, j - i))
+                    # This should be fallthrough.
+                    self.preds[j].add(i)
+                    self.succs[i].add(j)
+                i = j
+            if j in self.branch_analyzer.branches:
+                if i >= 0:
+                    self.block_intervals.append((i, j - i + 1))
+                    for branch in self.branch_analyzer.branches[j]:
+                        assert (branch in self.branch_targets)
+                        self.preds[branch].add(i)
+                        self.succs[i].add(branch)
+                i = -1
+
+
+class GraphVizPainter(object):
+    def __init__(self, function, cfg_analyzer):
+        self.function = function
+        self.cfg_analyzer = cfg_analyzer
+
+    def Dot(self, out_stream, name='foo'):
+        out_stream.write('digraph {} '.format(name))
+        out_stream.write('{\n')
+        out_stream.write('  node [shape="box", fontname="monospace"];\n')
+        for bb in self.cfg_analyzer.block_intervals:
+            bb_name = 'bb%d' % bb[0]
+            instructions = '\\l'.join([
+                '%x: %s' % (x[0], x[1])
+                for x in self.function.instructions[bb[0]:bb[0] + bb[1]]
+            ]) + '\\l'
+            out_stream.write('  %s [label="%s"];\n' % (bb_name, instructions))
+        for src in self.cfg_analyzer.succs:
+            src_name = 'bb%d' % src
+            for tgt in self.cfg_analyzer.succs[src]:
+                tgt_name = 'bb%d' % tgt
+                out_stream.write('  %s -> %s;\n' % (src_name, tgt_name))
+        out_stream.write('}\n')
+
+
 class BranchAnalyzer(object):
     def __init__(self, context, function):
         self.context = context
@@ -149,8 +157,8 @@ class BranchAnalyzer(object):
             if IsLongBranch(inst_main):
                 self.branches[i] = []
             elif len(mg) >= 5 and mg[4]:
+                # We might have encountered a branch. There is chance we get FP of branching.
                 label = mg[2]
-                # We have encountered a branch.
                 offset = int(mg[4], 16)
                 label_address = self.context.FindAddress(label)
                 if label_address < 0:
@@ -162,6 +170,7 @@ class BranchAnalyzer(object):
                     targets.append(index_of_address)
                 if not IsUncondBr(inst_main) and (i + 1) < len(
                         self.function.instructions):
+                    # Fallthrough.
                     targets.append(i + 1)
                 if not targets:
                     logging.debug(
@@ -241,14 +250,16 @@ def main():
     BA = BranchAnalyzer(context, function)
     BA.Analyze()
     logging.debug("{}'s branches: {}".format(function.name, BA.branches))
-    P = CFGPainter(function, BA)
-    P.Plan()
-    logging.debug("{}'s basic block layout: {}".format(function.name, P.BBs))
+    CA = CFGAnalyzer(function, BA)
+    CA.Analyze()
+    GVP = GraphVizPainter(function, CA)
+    logging.debug("{}'s basic block layout: {}".format(function.name,
+                                                       CA.block_intervals))
     if not config.out:
-        P.Dot(sys.stdout)
+        GVP.Dot(sys.stdout)
     else:
         with open(config.out, 'w') as out:
-            P.Dot(out)
+            GVP.Dot(out)
 
 
 if __name__ == '__main__':
