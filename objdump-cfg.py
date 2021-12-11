@@ -107,6 +107,7 @@ class CFGAnalyzer(object):
             if j in self.branch_analyzer.branches:
                 if i >= 0:
                     self.block_intervals.append((i, j - i + 1))
+                    assert (i in self.branch_targets)
                     for branch in self.branch_analyzer.branches[j]:
                         assert (branch in self.branch_targets)
                         self.preds[branch].add(i)
