@@ -28,6 +28,7 @@ LONG_BRANCHES = [
         r'\bblr\b',
         r'\bretq\b',
         r'\bret\b',
+        r'\bud2\b',
     ]
 ]
 
